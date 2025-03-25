@@ -1,0 +1,3 @@
+-define(KAFKA_HOST, <<"kafka_host">>).
+-define(KAFKA_PORT, <<"kafka_port">>).
+-define(KAFKA_PRESENCE_TOPIC, <<"kafka_presence_topic">>).

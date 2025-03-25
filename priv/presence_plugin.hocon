@@ -1,0 +1,5 @@
+{
+    "kafka_host": "127.0.0.1",
+    "kafka_port": 9092,
+    "kafka_presence_topic": "test.topic"
+}

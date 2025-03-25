@@ -7,11 +7,15 @@
 
 %% for logging
 -include_lib("emqx/include/logger.hrl").
+-include("presence_plugin.hrl").
 
 -export([
     load/1,
     unload/0
 ]).
+
+-import(presence_plugin_config, [get_config_by_key/1]).
+
 
 %% Client Lifecycle Hooks
 -export([
@@ -47,8 +51,10 @@
 
 %% Called when the plugin application start
 load(Env) ->
-    KafkaBrokers = [{"127.0.0.1", 9092}],
-    KafkaTopic = <<"test.topic">>,
+    KafkaHost = get_config_by_key(?KAFKA_HOST),
+    KafkaPort = get_config_by_key(?KAFKA_PORT),
+    KafkaBrokers = [{KafkaHost, KafkaPort}],
+    KafkaTopic = iolist_to_binary(get_config_by_key(?KAFKA_PRESENCE_TOPIC)),
     {ok, _} = application:ensure_all_started(brod),
     ok = brod:start_client(KafkaBrokers, kafka_client, []),
     ok = brod:start_producer(kafka_client, KafkaTopic, []),
