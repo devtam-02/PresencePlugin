@@ -58,7 +58,7 @@ load(Env) ->
     {ok, _} = application:ensure_all_started(brod),
     ok = brod:start_client(KafkaBrokers, kafka_client, []),
     ok = brod:start_producer(kafka_client, KafkaTopic, []),
-    ?SLOG(info, "Kafka client initialized with brokers=~p, topic=~p", [KafkaBrokers, KafkaTopic]),
+    ?SLOG(error, "Kafka client initialized with brokers=~p, topic=~p", [KafkaBrokers, KafkaTopic]),
 
     hook('client.connect', {?MODULE, on_client_connect, [Env]}),
     hook('client.connack', {?MODULE, on_client_connack, [Env]}),
@@ -90,7 +90,7 @@ on_client_connect(ConnInfo, Props, _Env) ->
     %% * Recommended to always have a `msg` field,
     %% * Use underscore instead of space to help log indexers,
     %% * Try to use static fields
-    ?SLOG(debug, #{
+    ?SLOG(error, #{
         msg => "demo_log_msg_on_client_connect",
         conninfo => ConnInfo,
         props => Props
@@ -269,10 +269,10 @@ unload() ->
 send_event_to_kafka(KafkaTopic, Key, Event) ->
     %% Chuyển event thành JSON binary
     JsonEvent = jiffy:encode(Event),
-    ?SLOG(info, "Sending event to Kafka: Topic=~p, Key=~p, Event=~p", [KafkaTopic, Key, Event]),
+    ?SLOG(error, "Sending event to Kafka: Topic=~p, Key=~p, Event=~p", [KafkaTopic, Key, Event]),
     case brod:produce_sync(kafka_client, KafkaTopic, 0, Key, JsonEvent) of
         ok ->
-            ?SLOG(debug, "Successfully sent event to Kafka: Topic=~p", [KafkaTopic]);
+            ?SLOG(error, "Successfully sent event to Kafka: Topic=~p", [KafkaTopic]);
         {error, Reason} ->
             ?SLOG(error, "Failed to send event to Kafka: Reason=~p", [Reason])
     end.
