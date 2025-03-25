@@ -47,7 +47,7 @@
 
 %% Called when the plugin application start
 load(Env) ->
-    KafkaBrokers = [{"10.2.22.140", 9092}],
+    KafkaBrokers = [{"127.0.0.1", 9092}],
     KafkaTopic = <<"test.topic">>,
     {ok, _} = application:ensure_all_started(brod),
     ok = brod:start_client(KafkaBrokers, kafka_client, []),
