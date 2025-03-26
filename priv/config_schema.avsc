@@ -1,0 +1,64 @@
+{
+  "type": "record",
+  "name": "ExtendedConfig",
+  "fields": [
+    {
+      "name": "kafka_host",
+      "type": "string",
+      "default": "localhost",
+      "$ui": {
+        "component": "input",
+        "flex": 12,
+        "required": true,
+        "label": "$hostname_label",
+        "description": "$hostname_desc",
+        "rules": [
+          {
+            "type": "pattern",
+            "pattern": "^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])(\\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9]))*$",
+            "message": "$hostname_validate"
+          }
+        ]
+      }
+    },
+    {
+      "name": "kafka_port",
+      "type": "int",
+      "default": 9092,
+      "$ui": {
+        "component": "input-number",
+        "flex": 12,
+        "required": true,
+        "label": "$port_label",
+        "description": "$port_desc",
+        "rules": [
+          {
+            "type": "range",
+            "min": 1,
+            "max": 65535,
+            "message": "$port_range_validate"
+          }
+        ]
+      }
+    },
+    {
+      "name": "kafka_presence_topic",
+      "type": "string",
+      "default": "localhost",
+      "$ui": {
+        "component": "input",
+        "flex": 12,
+        "required": true,
+        "label": "$hostname_label",
+        "description": "$hostname_desc",
+        "rules": [
+          {
+            "type": "pattern",
+            "pattern": "^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])(\\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9]))*$",
+            "message": "$hostname_validate"
+          }
+        ]
+      }
+    }
+  ]
+}

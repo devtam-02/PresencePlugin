@@ -16,28 +16,11 @@
 
 -import(presence_plugin_config, [get_config_by_key/1]).
 
-
 %% Client Lifecycle Hooks
 -export([
     on_client_connect/3,
-    on_client_connack/4,
     on_client_connected/3,
-    on_client_disconnected/4,
-    on_client_authenticate/3,
-    on_client_authorize/5,
-    on_client_subscribe/4,
-    on_client_unsubscribe/4
-]).
-
-%% Session Lifecycle Hooks
--export([
-    on_session_created/3,
-    on_session_subscribed/4,
-    on_session_unsubscribed/4,
-    on_session_resumed/3,
-    on_session_discarded/3,
-    on_session_takenover/3,
-    on_session_terminated/4
+    on_client_disconnected/4
 ]).
 
 %% Message Pubsub Hooks
@@ -51,30 +34,10 @@
 
 %% Called when the plugin application start
 load(Env) ->
-    KafkaHost = get_config_by_key(?KAFKA_HOST),
-    KafkaPort = get_config_by_key(?KAFKA_PORT),
-    KafkaBrokers = [{KafkaHost, KafkaPort}],
-    KafkaTopic = iolist_to_binary(get_config_by_key(?KAFKA_PRESENCE_TOPIC)),
-    {ok, _} = application:ensure_all_started(brod),
-    ok = brod:start_client(KafkaBrokers, kafka_client, []),
-    ok = brod:start_producer(kafka_client, KafkaTopic, []),
-    ?SLOG(error, "Kafka client initialized with brokers=~p, topic=~p", [KafkaBrokers, KafkaTopic]),
-
+    kafka_init(Env),
     hook('client.connect', {?MODULE, on_client_connect, [Env]}),
-    hook('client.connack', {?MODULE, on_client_connack, [Env]}),
-    hook('client.connected', {?MODULE, on_client_connected, [KafkaTopic]}),
+    hook('client.connected', {?MODULE, on_client_connected, [Env]}),
     hook('client.disconnected', {?MODULE, on_client_disconnected, [Env]}),
-    hook('client.authenticate', {?MODULE, on_client_authenticate, [Env]}),
-    hook('client.authorize', {?MODULE, on_client_authorize, [Env]}),
-    hook('client.subscribe', {?MODULE, on_client_subscribe, [Env]}),
-    hook('client.unsubscribe', {?MODULE, on_client_unsubscribe, [Env]}),
-    hook('session.created', {?MODULE, on_session_created, [Env]}),
-    hook('session.subscribed', {?MODULE, on_session_subscribed, [Env]}),
-    hook('session.unsubscribed', {?MODULE, on_session_unsubscribed, [Env]}),
-    hook('session.resumed', {?MODULE, on_session_resumed, [Env]}),
-    hook('session.discarded', {?MODULE, on_session_discarded, [Env]}),
-    hook('session.takenover', {?MODULE, on_session_takenover, [Env]}),
-    hook('session.terminated', {?MODULE, on_session_terminated, [Env]}),
     hook('message.publish', {?MODULE, on_message_publish, [Env]}),
     hook('message.puback', {?MODULE, on_message_puback, [Env]}),
     hook('message.delivered', {?MODULE, on_message_delivered, [Env]}),
@@ -95,103 +58,24 @@ on_client_connect(ConnInfo, Props, _Env) ->
         conninfo => ConnInfo,
         props => Props
     }),
+    send_presence_to_kafka(),
     %% If you want to refuse this connection, you should return with:
     %% {stop, {error, ReasonCode}}
     %% the ReasonCode can be found in the emqx_reason_codes.erl
     {ok, Props}.
 
-on_client_connack(ConnInfo = #{clientid := ClientId}, Rc, Props, _Env) ->
-    io:format(
-        "Client(~s) connack, ConnInfo: ~p, Rc: ~p, Props: ~p~n",
-        [ClientId, ConnInfo, Rc, Props]
-    ),
-    {ok, Props}.
-
-on_client_connected(ClientInfo = #{clientid := ClientId}, ConnInfo, KafkaTopic) ->
+on_client_connected(ClientInfo = #{clientid := ClientId}, ConnInfo, _Env) ->
     io:format(
         "Client(~s) connected, ClientInfo:~n~p~n, ConnInfo:~n~p~n",
         [ClientId, ClientInfo, ConnInfo]
     ),
-    %% Tạo event để gửi đến Kafka
-    Event = #{
-        event => <<"connected">>,
-        clientid => ClientId,
-        timestamp => erlang:system_time(millisecond),
-        clientinfo => ClientInfo,
-        conninfo => ConnInfo
-    },
     %% Gửi event đến Kafka
-    send_event_to_kafka(KafkaTopic, ClientId, Event).
+    send_presence_to_kafka().
 
 on_client_disconnected(ClientInfo = #{clientid := ClientId}, ReasonCode, ConnInfo, _Env) ->
     io:format(
         "Client(~s) disconnected due to ~p, ClientInfo:~n~p~n, ConnInfo:~n~p~n",
         [ClientId, ReasonCode, ClientInfo, ConnInfo]
-    ).
-
-%% @doc
-%% - Return `{stop, ok}' if this client is to be allowed to login.
-%% - Return `{stop, {error, not_authorized}}' if this client is not allowed to login.
-%% - Return `ignore' if this client is to be authenticated by other plugins
-%% or EMQX's built-in authenticators.
-on_client_authenticate(ClientInfo = #{clientid := ClientId}, DefaultResult, Env) ->
-    io:format(
-        "Client(~s) authenticate, ClientInfo:~n~p~n"
-        "DefaultResult:~p~n"
-        "Env:~p~n",
-        [ClientId, ClientInfo, DefaultResult, Env]
-    ),
-    DefaultResult.
-
-%% @doc
-%% - Return `{stop, #{result => Result}}' where `Result' is either `allow' or `deny'.
-%% - Return `ignore' if this client is to be authorized by other plugins or
-%% EMQX's built-in authorization sources.
-on_client_authorize(ClientInfo = #{clientid := ClientId}, PubSub, Topic, DefaultResult, Env) ->
-    io:format(
-        "Client(~s) authorize, ClientInfo:~n~p~n"
-        "~p to topic (~p) DefaultResult:~p~n"
-        "Env:~p~n",
-        [ClientId, ClientInfo, PubSub, Topic, DefaultResult, Env]
-    ),
-    %% `from' is for logging
-    Result = #{result => allow, from => ?MODULE},
-    {stop, Result}.
-
-on_client_subscribe(#{clientid := ClientId}, _Properties, TopicFilters, _Env) ->
-    io:format("Client(~s) will subscribe: ~p~n", [ClientId, TopicFilters]),
-    {ok, TopicFilters}.
-
-on_client_unsubscribe(#{clientid := ClientId}, _Properties, TopicFilters, _Env) ->
-    io:format("Client(~s) will unsubscribe ~p~n", [ClientId, TopicFilters]),
-    {ok, TopicFilters}.
-
-%%--------------------------------------------------------------------
-%% Session Lifecycle Hooks
-%%--------------------------------------------------------------------
-
-on_session_created(#{clientid := ClientId}, SessInfo, _Env) ->
-    io:format("Session(~s) created, Session Info:~n~p~n", [ClientId, SessInfo]).
-
-on_session_subscribed(#{clientid := ClientId}, Topic, SubOpts, _Env) ->
-    io:format("Session(~s) subscribed ~s with subopts: ~p~n", [ClientId, Topic, SubOpts]).
-
-on_session_unsubscribed(#{clientid := ClientId}, Topic, Opts, _Env) ->
-    io:format("Session(~s) unsubscribed ~s with opts: ~p~n", [ClientId, Topic, Opts]).
-
-on_session_resumed(#{clientid := ClientId}, SessInfo, _Env) ->
-    io:format("Session(~s) resumed, Session Info:~n~p~n", [ClientId, SessInfo]).
-
-on_session_discarded(_ClientInfo = #{clientid := ClientId}, SessInfo, _Env) ->
-    io:format("Session(~s) is discarded. Session Info: ~p~n", [ClientId, SessInfo]).
-
-on_session_takenover(_ClientInfo = #{clientid := ClientId}, SessInfo, _Env) ->
-    io:format("Session(~s) is takenover. Session Info: ~p~n", [ClientId, SessInfo]).
-
-on_session_terminated(_ClientInfo = #{clientid := ClientId}, Reason, SessInfo, _Env) ->
-    io:format(
-        "Session(~s) is terminated due to ~p~nSession Info: ~p~n",
-        [ClientId, Reason, SessInfo]
     ).
 
 %%--------------------------------------------------------------------
@@ -246,35 +130,55 @@ unload() ->
     ?SLOG(info, "Kafka client stopped"),
 
     unhook('client.connect', {?MODULE, on_client_connect}),
-    unhook('client.connack', {?MODULE, on_client_connack}),
     unhook('client.connected', {?MODULE, on_client_connected}),
     unhook('client.disconnected', {?MODULE, on_client_disconnected}),
-    unhook('client.authenticate', {?MODULE, on_client_authenticate}),
-    unhook('client.authorize', {?MODULE, on_client_authorize}),
-    unhook('client.subscribe', {?MODULE, on_client_subscribe}),
     unhook('client.unsubscribe', {?MODULE, on_client_unsubscribe}),
-    unhook('session.created', {?MODULE, on_session_created}),
-    unhook('session.subscribed', {?MODULE, on_session_subscribed}),
-    unhook('session.unsubscribed', {?MODULE, on_session_unsubscribed}),
-    unhook('session.resumed', {?MODULE, on_session_resumed}),
-    unhook('session.discarded', {?MODULE, on_session_discarded}),
-    unhook('session.takenover', {?MODULE, on_session_takenover}),
-    unhook('session.terminated', {?MODULE, on_session_terminated}),
     unhook('message.publish', {?MODULE, on_message_publish}),
     unhook('message.puback', {?MODULE, on_message_puback}),
     unhook('message.delivered', {?MODULE, on_message_delivered}),
     unhook('message.acked', {?MODULE, on_message_acked}),
     unhook('message.dropped', {?MODULE, on_message_dropped}).
 
-send_event_to_kafka(KafkaTopic, Key, Event) ->
-    %% Chuyển event thành JSON binary
-    JsonEvent = jiffy:encode(Event),
-    ?SLOG(error, "Sending event to Kafka: Topic=~p, Key=~p, Event=~p", [KafkaTopic, Key, Event]),
-    case brod:produce_sync(kafka_client, KafkaTopic, 0, Key, JsonEvent) of
-        ok ->
-            ?SLOG(error, "Successfully sent event to Kafka: Topic=~p", [KafkaTopic]);
-        {error, Reason} ->
-            ?SLOG(error, "Failed to send event to Kafka: Reason=~p", [Reason])
+
+kafka_init(_Env) ->
+    ?SLOG(info, "Start to init kafka...... ~n"),
+    {ok, _} = application:ensure_all_started(brod),
+    KafkaHost = get_config_by_key(?KAFKA_HOST),
+    KafkaPort = get_config_by_key(?KAFKA_PORT),
+    KafkaPresenceTopic = iolist_to_binary(get_config_by_key(?KAFKA_PRESENCE_TOPIC)),
+    ok = brod:start_client([{KafkaHost, KafkaPort}], kafka_client),
+    ok = brod:start_producer(kafka_client, KafkaPresenceTopic, []),
+    ?SLOG(info, "Init kafka successfully.....~n").
+
+send_presence_to_kafka() ->
+    try
+        % Danh sách thông tin cần gửi
+        MsgBody = [
+            {type, <<"presence">>},
+            {id, <<"213441">>},
+            {sub, <<"asdaf">>},
+            {clientId, <<"sdfsfg">>}
+        ],
+        {ok, Mb} = emqx_utils_json:safe_encode(MsgBody),
+        Payload = iolist_to_binary(Mb),
+        KafkaPresenceTopic = iolist_to_binary(get_config_by_key(?KAFKA_PRESENCE_TOPIC)),
+        
+        % Sử dụng pattern matching để bắt lỗi
+        case brod:produce_cb(kafka_client, KafkaPresenceTopic, hash, "", Payload, fun(_,_) -> ok end) of
+            {ok, _} -> ok;
+            {error, Reason} -> 
+                ?SLOG(error, #{
+                    msg => "failed_to_send_to_kafka",
+                    reason => Reason
+                })
+        end
+    catch
+        Class:Error ->
+            ?SLOG(error, #{
+                msg => "exception_in_send_presence_to_kafka",
+                class => Class,
+                error => Error
+            })
     end.
 
 hook(HookPoint, MFA) ->

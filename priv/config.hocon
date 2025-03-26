@@ -1,0 +1,5 @@
+## The same format used by EMQX since 5.0
+
+kafka_host = "10.2.22.140",
+kafka_port = 9092,
+kafka_presence_topic = "test.topic"
